@@ -1,5 +1,5 @@
 # Mastermind AI
-An ever so slightly super human Mastermind player.
+An ever-so-slightly superhuman Mastermind player.
 
 Each guess maximizes the expected number of potential secret codes to discard. Fully optimized to run in parallel on however many CPUs are available. 
 
