@@ -7,6 +7,8 @@ Each guess maximizes the expected number of potential secret codes to discard. F
 
 ## Build and Run
 
+To play a game of Mastermind, run
+
 ```bash
 go build
 ./mastermind-ai
@@ -14,4 +16,4 @@ go build
 
 ## Performance
 
-To run a performance evaluation on the AI, simply call the `runEvaluation` function. Recommended number of games is 20 - 100.
+To run a performance evaluation on the AI, simply call the `runEvaluation` function. Recommended number of games is 20 - 100. (This happens after each game by default.)
