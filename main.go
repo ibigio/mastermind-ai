@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -31,31 +32,91 @@ func (c CodePeg) String() string {
 
 func main() {
 
+	// configuration setup
 	rand.Seed(time.Now().UnixNano())
-
+	numWorkers := runtime.NumCPU()
+	numPegs := 4
 	allColors := []CodePeg{red, orange, yellow, green, blue, purple}
+
+	// play an interactive game
+	printUsage()
 	playInteractive(allColors, 4, 4)
+	fmt.Println()
+
+	// run evaluation
+	numGames := 20
+	runEvaluation(numGames, allColors, numWorkers, numPegs)
+}
+
+func printUsage() {
+	fmt.Println("Choose your code. Enter each score like so:")
+	fmt.Println("0 red 2 white")
+	fmt.Println("Enjoy!")
+	fmt.Println()
+}
+
+func runEvaluation(numGames int, allColors []CodePeg, numWorkers int, numPegs int) (avgGuesses float32, avgTime time.Duration) {
+	fmt.Printf("Evaluation === %v games, %v workers\n", numGames, numWorkers)
+	totalGuesses := 0
+	totalTime := time.Duration(0)
+	for i := 0; i < numGames; i++ {
+		start := time.Now()
+		totalGuesses += selfPlay(allColors, numPegs, numWorkers, false)
+		totalTime += time.Since(start)
+	}
+	avgGuesses = float32(totalGuesses) / float32(numGames)
+	avgTime = totalTime / time.Duration(totalGuesses)
+	fmt.Println("Avg Guesses/Game:", avgGuesses)
+	fmt.Println("Avg Time/Guess:", avgTime.Round(time.Millisecond))
+	fmt.Println()
+	return
+}
+
+func selfPlay(allColors []CodePeg, numPegs int, numWorkers int, logging bool) (totalGuesses int) {
+
+	// initialize
+	secrets, guesses := initializeSecrets(allColors, numPegs)
+	perfectScore := Score{red: numPegs}
+
+	// choose secret
+	secret := secrets[rand.Intn(len(secrets))]
+
+	// guess and discard until finished
+	for true {
+		guess, quality := calculateBestGuessParallel(guesses, secrets, numWorkers)
+		totalGuesses++
+
+		if logging {
+			percent := fmt.Sprintf("%.2f", (float32(quality)/float32(len(secrets)))*100)
+			fmt.Printf("%v. %v %v%%\n", totalGuesses, guess, percent)
+		}
+
+		score := calculateScore(secret, guess)
+		if score == perfectScore {
+			break
+		}
+		secrets = discardImplausibleSecrets(guess, score, secrets)
+
+		if len(secrets) == 0 {
+			panic("All secrets discarded. Invalid scoring.")
+		}
+	}
+
+	return totalGuesses
 }
 
 func playInteractive(allColors []CodePeg, numPegs int, numWorkers int) {
 
 	// generate initial guesses and secrets
-	allCodes := generateAllPossibleCodes(allColors, 4)
-	secrets := make([]SecretCode, len(allCodes))
-	guesses := make([]GuessCode, len(allCodes))
-	for i := range allCodes {
-		secrets[i] = SecretCode(allCodes[i])
-		guesses[i] = GuessCode(allCodes[i])
-	}
-
+	secrets, guesses := initializeSecrets(allColors, numPegs)
 	perfectScore := Score{red: numPegs}
 
 	// guess and discard until finished
 	totalGuesses := 0
-	for len(secrets) != 1 {
+	for true {
 		guess, _ := calculateBestGuessParallel(guesses, secrets, numWorkers)
-		fmt.Println(guess)
 		totalGuesses++
+		fmt.Printf("%v. %v\n", totalGuesses, guess)
 
 		score := getScore()
 		if score == perfectScore {
@@ -64,7 +125,8 @@ func playInteractive(allColors []CodePeg, numPegs int, numWorkers int) {
 		secrets = discardImplausibleSecrets(guess, score, secrets)
 
 		if len(secrets) == 0 {
-			panic("All secrets discarded. Double check scores.")
+			fmt.Println("No potential secrets remaining. You most likely made a mistake in your scoring.")
+			return
 		}
 	}
 
@@ -77,7 +139,6 @@ func getScore() Score {
 		fmt.Println(err.Error())
 		score, err = readScore()
 	}
-	fmt.Println(score)
 	return score
 }
 

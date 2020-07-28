@@ -17,6 +17,11 @@ type Score struct {
 	white int
 }
 
+type QualifiedGuess struct {
+	guess   GuessCode
+	quality int
+}
+
 const (
 	red CodePeg = iota
 	orange
@@ -36,6 +41,17 @@ func codesEqual(a, b Code) bool {
 		}
 	}
 	return true
+}
+
+func initializeSecrets(allColors []CodePeg, numPegs int) (secrets []SecretCode, guesses []GuessCode) {
+	allCodes := generateAllPossibleCodes(allColors, numPegs)
+	secrets = make([]SecretCode, len(allCodes))
+	guesses = make([]GuessCode, len(allCodes))
+	for i := range allCodes {
+		secrets[i] = SecretCode(allCodes[i])
+		guesses[i] = GuessCode(allCodes[i])
+	}
+	return
 }
 
 func calculateScore(secret SecretCode, guess GuessCode) Score {
@@ -164,7 +180,13 @@ func generateChunks(guesses []GuessCode, numChunks int) [][]GuessCode {
 
 func calculateBestGuessParallel(guesses []GuessCode, secrets []SecretCode, numWorkers int) (bestGuess GuessCode, bestGuessQuality int) {
 
-	bestGuessesChan := make(chan GuessCode)
+	// if few choices left, take a gander
+	guessThreshold := 3
+	if len(secrets) <= guessThreshold {
+		return GuessCode(secrets[rand.Intn(len(secrets))]), 1
+	}
+
+	bestGuessesChan := make(chan QualifiedGuess)
 
 	chunks := generateChunks(guesses, numWorkers)
 	for i := 0; i < numWorkers; i++ {
@@ -174,8 +196,9 @@ func calculateBestGuessParallel(guesses []GuessCode, secrets []SecretCode, numWo
 	// accumulate guesses and determine best
 	bestGuessQuality = math.MinInt64
 	for i := 0; i < numWorkers; i++ {
-		guess := <-bestGuessesChan
-		quality := determineGuessQuality(guess, secrets)
+		qualifiedGuess := <-bestGuessesChan
+		guess := qualifiedGuess.guess
+		quality := qualifiedGuess.quality
 		if quality > bestGuessQuality {
 			bestGuess = guess
 			bestGuessQuality = quality
@@ -185,9 +208,9 @@ func calculateBestGuessParallel(guesses []GuessCode, secrets []SecretCode, numWo
 	return
 }
 
-func calculateBestGuessWorkerAsync(guesses []GuessCode, secrets []SecretCode, guessChan chan GuessCode) {
-	guess, _ := calculateBestGuess(guesses, secrets)
-	guessChan <- guess
+func calculateBestGuessWorkerAsync(guesses []GuessCode, secrets []SecretCode, guessChan chan QualifiedGuess) {
+	guess, quality := calculateBestGuess(guesses, secrets)
+	guessChan <- QualifiedGuess{guess, quality}
 }
 
 func calculateBestGuess(guesses []GuessCode, secrets []SecretCode) (bestGuess GuessCode, bestGuessQuality int) {
