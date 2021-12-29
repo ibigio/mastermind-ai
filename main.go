@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"os"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -30,6 +31,14 @@ func (c CodePeg) String() string {
 	return "invalid"
 }
 
+func sum(array []int) int {
+	result := 0
+	for _, v := range array {
+		result += v
+	}
+	return result
+}
+
 func main() {
 
 	// configuration setup
@@ -40,12 +49,13 @@ func main() {
 
 	// play an interactive game
 	printUsage()
-	playInteractive(allColors, 4, 4)
+	playInteractive(allColors, numPegs, numWorkers)
 	fmt.Println()
 
 	// run evaluation
-	numGames := 20
-	runEvaluation(numGames, allColors, numWorkers, numPegs)
+	numGames := 100
+	// runEvaluation(numGames, allColors, numWorkers, numPegs, true)
+	runSimulations(numGames, allColors, numWorkers, numPegs, true)
 }
 
 func printUsage() {
@@ -55,13 +65,13 @@ func printUsage() {
 	fmt.Println()
 }
 
-func runEvaluation(numGames int, allColors []CodePeg, numWorkers int, numPegs int) (avgGuesses float32, avgTime time.Duration) {
-	fmt.Printf("Evaluation === %v games, %v workers\n", numGames, numWorkers)
+func runEvaluation(numGames int, allColors []CodePeg, numWorkers int, numPegs int, optimize bool) (avgGuesses float32, avgTime time.Duration) {
+	fmt.Printf("Evaluation === %v games, %v workers, optimize is %v\n", numGames, numWorkers, optimize)
 	totalGuesses := 0
 	totalTime := time.Duration(0)
 	for i := 0; i < numGames; i++ {
 		start := time.Now()
-		totalGuesses += selfPlay(allColors, numPegs, numWorkers, false)
+		totalGuesses += selfPlayRandom(allColors, numPegs, numWorkers, false, optimize)
 		totalTime += time.Since(start)
 	}
 	avgGuesses = float32(totalGuesses) / float32(numGames)
@@ -72,18 +82,31 @@ func runEvaluation(numGames int, allColors []CodePeg, numWorkers int, numPegs in
 	return
 }
 
-func selfPlay(allColors []CodePeg, numPegs int, numWorkers int, logging bool) (totalGuesses int) {
+func selfPlayRandom(allColors []CodePeg, numPegs int, numWorkers int, logging bool, optimize bool) (totalGuesses int) {
+	// choose random secret
+	secret := SecretCode(randomCode(allColors, numPegs))
+	return selfPlay(allColors, secret, numPegs, numWorkers, logging, optimize)
+}
+
+func selfPlay(allColors []CodePeg, secret SecretCode, numPegs int, numWorkers int, logging bool, optimize bool) (totalGuesses int) {
 
 	// initialize
 	secrets, guesses := initializeSecrets(allColors, numPegs)
 	perfectScore := Score{red: numPegs}
-
-	// choose secret
-	secret := secrets[rand.Intn(len(secrets))]
+	isFirstGuess := true
 
 	// guess and discard until finished
 	for true {
-		guess, quality := calculateBestGuessParallel(guesses, secrets, numWorkers)
+		var guess GuessCode
+		var quality int
+
+		if isFirstGuess && optimize {
+			guess = firstGuessStrategey(guesses)
+			isFirstGuess = false
+		} else {
+			guess, quality = calculateBestGuessParallel(guesses, secrets, numWorkers)
+		}
+
 		totalGuesses++
 
 		if logging {
@@ -130,7 +153,7 @@ func playInteractive(allColors []CodePeg, numPegs int, numWorkers int) {
 		}
 	}
 
-	fmt.Printf("Guess after %v guesses!\n", totalGuesses)
+	fmt.Printf("Guessed after %v guesses!\n", totalGuesses)
 }
 
 func getScore() Score {
@@ -174,4 +197,64 @@ func readScore() (Score, error) {
 	}
 
 	return Score{numRed, numWhite}, nil
+}
+
+func randomSecretCodeUnderTest(allColors []CodePeg, numPegs int) SecretCode {
+	return SecretCode{red, red, yellow, green}
+}
+
+func histogram(guessesPerGame []int, width int) {
+	scale := float32(width) / float32(len(guessesPerGame))
+	fmt.Println("Histogram")
+	freqs := make(map[int]int)
+	for _, guess := range guessesPerGame {
+		freqs[guess]++
+	}
+	// sort by frequency
+	var keys []int
+	for k := range freqs {
+		keys = append(keys, k)
+	}
+	sort.Ints(keys)
+	for _, k := range keys {
+		guess := k
+		freq := freqs[k]
+		bars := int(float32(freq) * scale)
+		if bars == 0 {
+			bars = 1
+		}
+		// horizontally print a sequence of '*'s to represent the frequency of the guess
+		// print percentage
+		percent := fmt.Sprintf("%.1f%%", float32(freq)/float32(len(guessesPerGame))*100)
+		fmt.Printf("%v: %v ", guess, percent)
+		// print gap to align all bars
+		for i := 0; i < 8-len(percent)-len(strconv.Itoa(guess)); i++ {
+			fmt.Print(" ")
+		}
+		for i := 0; i < bars; i++ {
+			fmt.Print("*")
+		}
+		fmt.Println()
+	}
+}
+
+func runSimulations(numGames int, allColors []CodePeg, numWorkers int, numPegs int, optimize bool) (avgGuesses float32, avgTime time.Duration) {
+	fmt.Printf("Simulations === %v games, %v workers, optimize is %v\n", numGames, numWorkers, optimize)
+	guessesPerGame := make([]int, numGames)
+	totalTime := time.Duration(0)
+	for i := 0; i < numGames; i++ {
+		secret := randomSecretCodeUnderTest(allColors, numPegs)
+		start := time.Now()
+		// totalGuesses += selfPlay(allColors, secret, numPegs, numWorkers, false, optimize)
+		guessesPerGame[i] = selfPlay(allColors, secret, numPegs, numWorkers, false, optimize)
+		totalTime += time.Since(start)
+	}
+	totalGuesses := sum(guessesPerGame)
+	avgGuesses = float32(totalGuesses) / float32(numGames)
+	avgTime = totalTime / time.Duration(totalGuesses)
+	fmt.Println("Avg Guesses/Game:", avgGuesses)
+	fmt.Println("Avg Time/Guess:", avgTime.Round(time.Millisecond))
+	fmt.Println()
+	histogram(guessesPerGame, 50)
+	return
 }

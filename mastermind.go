@@ -43,6 +43,15 @@ func codesEqual(a, b Code) bool {
 	return true
 }
 
+func randomCode(allColors []CodePeg, numPegs int) (code Code) {
+	code = make(Code, numPegs)
+	for i := range code {
+		colorIndex := rand.Intn(len(allColors))
+		code[i] = allColors[colorIndex]
+	}
+	return
+}
+
 func initializeSecrets(allColors []CodePeg, numPegs int) (secrets []SecretCode, guesses []GuessCode) {
 	allCodes := generateAllPossibleCodes(allColors, numPegs)
 	secrets = make([]SecretCode, len(allCodes))
@@ -176,6 +185,40 @@ func generateChunks(guesses []GuessCode, numChunks int) [][]GuessCode {
 	}
 
 	return chunks
+}
+
+func hasExactlyOneColorRepeatedTwice(guess GuessCode) bool {
+	colorCounts := make(map[CodePeg]int)
+	// count quantity of each color
+	for i := range guess {
+		colorCounts[guess[i]]++
+	}
+	numOnce := 0
+	numTwice := 0
+	for _, count := range colorCounts {
+		switch count {
+		case 1:
+			numOnce++
+		case 2:
+			numTwice++
+		default:
+			return false
+		}
+	}
+	return (numTwice == 1) && (numOnce+numTwice == len(colorCounts))
+
+}
+
+// this is a hard-coded strategy intended for games with four pegs and six colors
+func firstGuessStrategey(guesses []GuessCode) (bestGuess GuessCode) {
+	bestGuesses := make([]GuessCode, 0)
+	for i := range guesses {
+		if hasExactlyOneColorRepeatedTwice(guesses[i]) {
+			bestGuesses = append(bestGuesses, guesses[i])
+		}
+	}
+	randInt := rand.Intn(len(bestGuesses))
+	return bestGuesses[randInt]
 }
 
 func calculateBestGuessParallel(guesses []GuessCode, secrets []SecretCode, numWorkers int) (bestGuess GuessCode, bestGuessQuality int) {
