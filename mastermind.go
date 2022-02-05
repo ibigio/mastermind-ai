@@ -114,7 +114,7 @@ func generateAllPossibleCodes(colors []CodePeg, length int) []Code {
 		perm := strconv.FormatInt(int64(i), base)
 		newCode := make(Code, length)
 		for j, c := range perm {
-			index, _ := strconv.Atoi(string(c))
+			index, _ := strconv.ParseInt(string(c), base, 64)
 			newCode[(length-len(perm))+j] = colors[index]
 			possibileCodes[i] = newCode
 		}
